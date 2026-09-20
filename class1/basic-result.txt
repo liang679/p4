@@ -1,0 +1,10 @@
+官方 basic 自检结果
+
+命令：cd ~/tutorials/exercises/basic && cp solution/basic.p4 basic.p4 && make run
+Mininet: mininet> pingall
+
+输出：
+*** Results: 0% dropped (12/12 received)
+
+恢复：make stop; make clean; cp basic.p4.course-backup basic.p4
+

@@ -22,31 +22,11 @@ h1 xterm: python3 receive.py
 h2 xterm: python3 send-sr.py 10.0.1.1
 输入: 4 1 1 1
 
-## 清理
-mininet> exit
-make stop
-make clean# 实验一 三模态 Demo 运行命令记录
-
-## 启动
-终端A: cd 代码/三模态原始demo && make
-终端B: cd 代码/三模态原始demo && python3 mycontroller.py
-
-## IPv4
-mininet> pingall
-
-## IPv6
-mininet> h1 ping6 -c 3 fe80::5678%eth0
-mininet> h2 ping6 -c 3 fe80::1234%eth0
-
-## Source Routing 正向
-mininet> xterm h1 h2
-h2 xterm: python3 receive.py
-h1 xterm: python3 send-sr.py 10.0.2.2
-输入: 4 2 2 1
-
-## Source Routing 反向
-h2 xterm: python3 send-sr.py 10.0.1.1
-输入: 4 1 1 1
+## pcap 检查
+cd 代码/三模态原始demo
+tcpdump -nn -r pcaps/s1-eth1_in.pcap
+tcpdump -nn -e -r pcaps/s1-eth4_out.pcap
+tcpdump -nn -r pcaps/s2-eth1_out.pcap
 
 ## 清理
 mininet> exit
