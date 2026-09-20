@@ -1,0 +1,12 @@
+IPv4 证据文件：ipv4-s1-eth1_in.pcap, ipv4-s1-eth2_out.pcap, ipv4-s2-eth1_out.pcap
+      经过交换机：h1-s1-s11-s12-s2-h2
+      结论：10.0.1.1 > 10.0.2.2 ICMP echo request/reply 在 s1-eth1_in、s1-eth2_out、s11、s12、s2-eth1_out 均可见，IPv4 双向通过，路径与 topology.json 一致。
+
+IPv6 证据文件：ipv6-s1-eth1_in.pcap, ipv6-s2-eth1_out.pcap
+      经过交换机：h1-s1-s21-s22-s2-h2
+      结论：fe80::1234 > fe80::5678 ICMP6 echo request/reply 可见，IPv6 双向通过。
+
+SR 证据文件：sr-s1-eth1_in.pcap, sr-s1-eth4_out.pcap, sr-s2-eth4_in.pcap, sr-s2-eth1_out.pcap
+      正向端口栈：4 2 2 1；反向端口栈：4 1 1 1
+      路径：s1-eth1_in -> s1-eth4_out -> s31 -> s32 -> s2-eth4_in -> s2-eth1_out
+      结论：中间跳 EtherType=0x1234，s2-eth1_out 已恢复为 IPv4/UDP，SR 双向通过。

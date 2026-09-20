@@ -1,0 +1,6 @@
+x86_64
+Description:	Ubuntu 24.04.4 LTS
+p4c 1.2.5.15 (SHA: cdd7205767 BUILD: Release)
+1.15.4-883d4eae
+Python 3.12.3
+oracle

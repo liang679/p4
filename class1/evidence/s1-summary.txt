@@ -1,0 +1,60 @@
+5:[08:56:26.274] [bmv2] [D] [thread 5476] Set default default entry for table 'MyIngress.ipv4_lpm': NoAction - 
+7:[08:56:26.274] [bmv2] [D] [thread 5476] Set default default entry for table 'MyIngress.ipv6_lpm': MyIngress.drop - 
+10:Adding interface s1-eth2 as port 2
+11:[08:56:26.285] [bmv2] [D] [thread 5476] Adding interface s1-eth2 as port 2
+12:Adding interface s1-eth3 as port 3
+13:[08:56:26.303] [bmv2] [D] [thread 5476] Adding interface s1-eth3 as port 3
+14:Adding interface s1-eth4 as port 4
+15:[08:56:26.355] [bmv2] [D] [thread 5476] Adding interface s1-eth4 as port 4
+37:[08:56:26.505] [bmv2] [T] [thread 5491] [0.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+41:[08:56:26.505] [bmv2] [D] [thread 5491] [0.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+44:[08:56:26.505] [bmv2] [T] [thread 5491] [0.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+48:[08:56:26.505] [bmv2] [D] [thread 5491] [1.0] [cxt 0] Processing packet received on port 2
+64:[08:56:26.505] [bmv2] [T] [thread 5491] [1.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+68:[08:56:26.505] [bmv2] [D] [thread 5491] [1.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+71:[08:56:26.505] [bmv2] [T] [thread 5491] [1.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+75:[08:56:26.505] [bmv2] [D] [thread 5491] [2.0] [cxt 0] Processing packet received on port 3
+91:[08:56:26.505] [bmv2] [T] [thread 5491] [2.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+95:[08:56:26.505] [bmv2] [D] [thread 5491] [2.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+98:[08:56:26.505] [bmv2] [T] [thread 5491] [2.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+102:[08:56:26.505] [bmv2] [D] [thread 5491] [3.0] [cxt 0] Processing packet received on port 2
+118:[08:56:26.505] [bmv2] [T] [thread 5491] [3.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+122:[08:56:26.505] [bmv2] [D] [thread 5491] [3.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+125:[08:56:26.505] [bmv2] [T] [thread 5491] [3.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+129:[08:56:26.505] [bmv2] [D] [thread 5491] [4.0] [cxt 0] Processing packet received on port 3
+145:[08:56:26.505] [bmv2] [T] [thread 5491] [4.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+149:[08:56:26.505] [bmv2] [D] [thread 5491] [4.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+152:[08:56:26.505] [bmv2] [T] [thread 5491] [4.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+172:[08:56:26.539] [bmv2] [T] [thread 5491] [5.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+176:[08:56:26.539] [bmv2] [D] [thread 5491] [5.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+179:[08:56:26.539] [bmv2] [T] [thread 5491] [5.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+183:[08:56:26.658] [bmv2] [D] [thread 5491] [6.0] [cxt 0] Processing packet received on port 4
+199:[08:56:26.659] [bmv2] [T] [thread 5491] [6.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+203:[08:56:26.659] [bmv2] [D] [thread 5491] [6.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+206:[08:56:26.659] [bmv2] [T] [thread 5491] [6.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+210:[08:56:26.659] [bmv2] [D] [thread 5491] [7.0] [cxt 0] Processing packet received on port 3
+226:[08:56:26.659] [bmv2] [T] [thread 5491] [7.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+230:[08:56:26.659] [bmv2] [D] [thread 5491] [7.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+233:[08:56:26.659] [bmv2] [T] [thread 5491] [7.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+253:[08:56:26.719] [bmv2] [T] [thread 5491] [8.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+257:[08:56:26.719] [bmv2] [D] [thread 5491] [8.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+260:[08:56:26.719] [bmv2] [T] [thread 5491] [8.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+280:[08:56:26.719] [bmv2] [T] [thread 5491] [9.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+284:[08:56:26.719] [bmv2] [D] [thread 5491] [9.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+287:[08:56:26.719] [bmv2] [T] [thread 5491] [9.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+291:[08:56:26.789] [bmv2] [D] [thread 5491] [10.0] [cxt 0] Processing packet received on port 4
+307:[08:56:26.789] [bmv2] [T] [thread 5491] [10.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+311:[08:56:26.789] [bmv2] [D] [thread 5491] [10.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+314:[08:56:26.789] [bmv2] [T] [thread 5491] [10.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+318:[08:56:26.980] [bmv2] [D] [thread 5491] [11.0] [cxt 0] Processing packet received on port 2
+334:[08:56:26.980] [bmv2] [T] [thread 5491] [11.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+338:[08:56:26.980] [bmv2] [D] [thread 5491] [11.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+341:[08:56:26.980] [bmv2] [T] [thread 5491] [11.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+345:[08:56:26.985] [bmv2] [D] [thread 5491] [12.0] [cxt 0] Processing packet received on port 2
+361:[08:56:26.985] [bmv2] [T] [thread 5491] [12.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+365:[08:56:26.985] [bmv2] [D] [thread 5491] [12.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+368:[08:56:26.985] [bmv2] [T] [thread 5491] [12.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
+372:[08:56:26.985] [bmv2] [D] [thread 5491] [13.0] [cxt 0] Processing packet received on port 2
+388:[08:56:26.985] [bmv2] [T] [thread 5491] [13.0] [cxt 0] Applying table 'MyIngress.ipv6_lpm'
+392:[08:56:26.985] [bmv2] [D] [thread 5491] [13.0] [cxt 0] Table 'MyIngress.ipv6_lpm': miss
+395:[08:56:26.985] [bmv2] [T] [thread 5491] [13.0] [cxt 0] polymorphic.p4(196) Primitive mark_to_drop(standard_metadata)
