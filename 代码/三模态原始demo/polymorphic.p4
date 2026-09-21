@@ -603,15 +603,15 @@ control MyIngress(inout headers hdr,
             polymorphic_schedule.apply();
         }
 
-        if (hdr.polyShim.isValid()) {
+        if (hdr.polyShim.isValid()
+            && standard_metadata.ingress_port >= 2
+            && standard_metadata.ingress_port <= 4) {
             gateway_role.apply();
             if (meta.output_now == 1) {
                 restore_and_forward();
+            } else {
+                mark_to_drop(standard_metadata);
             }
-        }
-
-        if (hdr.polyShim.isValid()) {
-            // 内部副本已处理，跳过普通路由
         }
         else if (standard_metadata.mcast_grp == POLY_MCAST_GROUP) {
             // 已触发 multicast，交给 PRE 复制
@@ -645,7 +645,8 @@ control MyEgress(inout headers hdr,
                  inout metadata meta,
                  inout standard_metadata_t standard_metadata) {
     apply {
-        if (hdr.polyShim.isValid()) {
+        if (hdr.polyShim.isValid()
+            && standard_metadata.mcast_grp == POLY_MCAST_GROUP) {
             if (standard_metadata.egress_port == 2) {
                 hdr.ipv4.setValid();
                 hdr.ipv4.version        = 4;
@@ -685,29 +686,23 @@ control MyEgress(inout headers hdr,
                 if (hdr.polyShim.direction == 0) {
                     hdr.srcRoutes[0].setValid();
                     hdr.srcRoutes[0].bos  = 0;
-                    hdr.srcRoutes[0].port = 4;
+                    hdr.srcRoutes[0].port = 2;
                     hdr.srcRoutes[1].setValid();
                     hdr.srcRoutes[1].bos  = 0;
                     hdr.srcRoutes[1].port = 2;
                     hdr.srcRoutes[2].setValid();
-                    hdr.srcRoutes[2].bos  = 0;
-                    hdr.srcRoutes[2].port = 2;
-                    hdr.srcRoutes[3].setValid();
-                    hdr.srcRoutes[3].bos  = 1;
-                    hdr.srcRoutes[3].port = 1;
+                    hdr.srcRoutes[2].bos  = 1;
+                    hdr.srcRoutes[2].port = 1;
                 } else {
                     hdr.srcRoutes[0].setValid();
                     hdr.srcRoutes[0].bos  = 0;
-                    hdr.srcRoutes[0].port = 4;
+                    hdr.srcRoutes[0].port = 1;
                     hdr.srcRoutes[1].setValid();
                     hdr.srcRoutes[1].bos  = 0;
                     hdr.srcRoutes[1].port = 1;
                     hdr.srcRoutes[2].setValid();
-                    hdr.srcRoutes[2].bos  = 0;
+                    hdr.srcRoutes[2].bos  = 1;
                     hdr.srcRoutes[2].port = 1;
-                    hdr.srcRoutes[3].setValid();
-                    hdr.srcRoutes[3].bos  = 1;
-                    hdr.srcRoutes[3].port = 1;
                 }
                 hdr.ethernet.etherType   = TYPE_SRCROUTING;
                 hdr.polyShim.modality_id = MODE_SR;
