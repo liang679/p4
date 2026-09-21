@@ -23,3 +23,7 @@
 **/*.m4-backup
 **/*.m2-backup
 **/*.m1-backup
+**/*.fault-backup
+**/*.fix3-backup
+**/*.m5-fix-backup
+**/*.before-fix2
