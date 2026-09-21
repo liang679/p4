@@ -1,0 +1,44 @@
+实验三 裁决状态设计
+
+1. 序号与 slot 对应
+   slot = sequence_number & 1023，共 1024 个状态窗口。
+   每个 slot 存：
+     seq_tag            当前 slot 属于哪个 sequence
+     crc_candidate_1/2  两个候选 CRC
+     mode_candidate_1/2 对应候选来自哪个 modality
+     seen_modes         三个模态的到达位图
+     candidate_counts   已保存候选数 0/1/2
+     decided            是否已裁决
+     decided_crc        获胜 CRC
+
+2. 第一份为什么不输出
+   只有一份到达时无法形成 2/3 多数。第一份只保存为候选，
+   等后续副本到达后比较，一致才输出。
+
+3. 前两份不同时第三份如何决定
+   若第三份等于候选 1，候选 1 胜出，候选 2 对应模态记 bad；
+   若等于候选 2，候选 2 胜出，候选 1 对应模态记 bad；
+   都不等则 no_majority 加 1，不输出。
+
+4. 重复模态抑制
+   每个 modality 对应 seen_modes 中一个 bit。
+   同一 modality 再次到达时 bit 已置位，直接丢弃，不算票。
+
+5. 防止多次输出
+   decided 位置位后，迟到副本只更新 good/bad 统计，
+   不再触发 restore_and_forward。
+
+6. 透明还原
+   output_now=1 时执行 restore_and_forward：
+     用保存的 inner_ipv4 替换外层 IPv4
+     invalidate inner_ipv4、ipv6、polyShim、srcRoutes
+     Ethernet EtherType 恢复为 0x0800
+     目的 MAC 按方向设置
+     egress_spec = 1，发往主机口
+     IPv4 checksum 由 MyComputeChecksum 重算
+
+7. 故障注入
+   fault_table 按 modality_id 匹配，在中间交换机 s11/s21/s31 上安装：
+     corrupt:1:1:0x1  → s11 模态 1 XOR 0x1
+     drop:2:1        → s21 模态 2 丢弃
+   控制器支持多个 --fault 同时安装。

@@ -84,6 +84,19 @@ def writePolymorphicScheduleRule(p4info_helper, switch, destination, direction):
     switch.WriteTableEntry(entry)
 
 
+def writeGatewayRoleRules(p4info_helper, switch, ports):
+    for port in ports:
+        entry = p4info_helper.buildTableEntry(
+            table_name="MyIngress.gateway_role",
+            match_fields={
+                "standard_metadata.ingress_port": port,
+            },
+            action_name="MyIngress.do_adjudicate",
+            action_params={},
+        )
+        switch.WriteTableEntry(entry)
+
+
 def main(p4info_file_path, bmv2_file_path):
     # Instantiate a P4Runtime helper from the p4info file
     p4info_helper = p4runtime_lib.helper.P4InfoHelper(p4info_file_path)
@@ -102,6 +115,21 @@ def main(p4info_file_path, bmv2_file_path):
             address='127.0.0.1:50052',
             device_id=1,
             proto_dump_file='logs/s2-p4runtime-requests.txt')
+        s11 = p4runtime_lib.bmv2.Bmv2SwitchConnection(
+            name='s11',
+            address='127.0.0.1:50053',
+            device_id=2,
+            proto_dump_file='logs/s11-p4runtime-requests.txt')
+        s21 = p4runtime_lib.bmv2.Bmv2SwitchConnection(
+            name='s21',
+            address='127.0.0.1:50055',
+            device_id=4,
+            proto_dump_file='logs/s21-p4runtime-requests.txt')
+        s31 = p4runtime_lib.bmv2.Bmv2SwitchConnection(
+            name='s31',
+            address='127.0.0.1:50057',
+            device_id=6,
+            proto_dump_file='logs/s31-p4runtime-requests.txt')
         s11 = p4runtime_lib.bmv2.Bmv2SwitchConnection(
             name='s11',
             address='127.0.0.1:50053',
@@ -206,6 +234,45 @@ def main(p4info_file_path, bmv2_file_path):
         writeMulticastGroup(p4info_helper, s1, group_id=10)
         writeMulticastGroup(p4info_helper, s2, group_id=10)
 
+        # M5: 目的网关角色。S1/S2 的 p2/p3/p4 是副本入口
+        writeGatewayRoleRules(p4info_helper, s1, [2, 3, 4])
+        writeGatewayRoleRules(p4info_helper, s2, [2, 3, 4])
+
+        # 故障注入
+        target_map = {'1': s11, '2': s21, '3': s31}
+        args = sys.argv
+        i = 0
+        while i < len(args):
+            if args[i] == '--fault' and i + 1 < len(args):
+                fault_arg = args[i + 1]
+                parts = fault_arg.split(':')
+                if parts[0] == 'corrupt':
+                    mode = int(parts[1])
+                    mask = int(parts[3], 16)
+                    target = target_map[str(mode)]
+                    entry = p4info_helper.buildTableEntry(
+                        table_name="MyIngress.fault_table",
+                        match_fields={"hdr.polyShim.modality_id": mode},
+                        action_name="MyIngress.fault_corrupt",
+                        action_params={"mask": mask},
+                    )
+                    target.WriteTableEntry(entry)
+                    print("FAULT corrupt mode=%d mask=0x%x" % (mode, mask))
+                elif parts[0] == 'drop':
+                    mode = int(parts[1])
+                    target = target_map[str(mode)]
+                    entry = p4info_helper.buildTableEntry(
+                        table_name="MyIngress.fault_table",
+                        match_fields={"hdr.polyShim.modality_id": mode},
+                        action_name="MyIngress.fault_drop",
+                        action_params={},
+                    )
+                    target.WriteTableEntry(entry)
+                    print("FAULT drop mode=%d" % mode)
+                i += 2
+            else:
+                i += 1
+
 
     except KeyboardInterrupt:
         print(" Shutting down.")
@@ -222,6 +289,9 @@ if __name__ == '__main__':
     parser.add_argument('--bmv2-json', help='BMv2 JSON file from p4c',
                         type=str, action="store", required=False,
                         default='./build/polymorphic.json')
+    parser.add_argument('--fault', help='corrupt:MODE:SEQ:MASK or drop:MODE:SEQ',
+                        type=str, action="store", required=False,
+                        default=None)
     args = parser.parse_args()
 
     if not os.path.exists(args.p4info):
