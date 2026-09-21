@@ -337,11 +337,12 @@ control MyIngress(inout headers hdr,
 	default_action = drop();
     }
 
-    action start_polymorphic() {
+    action start_polymorphic(bit<8> packet_direction) {
         hdr.inner_ipv4 = hdr.ipv4;
         hdr.ipv4.setInvalid();
 
         meta.sequence_number = (bit<32>)standard_metadata.ingress_global_timestamp;
+        meta.direction = packet_direction;
 
         meta.source_crc32 =
             hdr.inner_ipv4.srcAddr ^
@@ -354,15 +355,9 @@ control MyIngress(inout headers hdr,
             hdr.protected_data.value[63:32] ^
             hdr.protected_data.value[31:0];
 
-        if (hdr.inner_ipv4.srcAddr == 0x0a000101) {
-            meta.direction = 0;
-        } else {
-            meta.direction = 1;
-        }
-
         hdr.polyShim.setValid();
         hdr.polyShim.magic            = POLY_MAGIC;
-        hdr.polyShim.direction        = meta.direction;
+        hdr.polyShim.direction        = packet_direction;
         hdr.polyShim.sequence_number  = meta.sequence_number;
         hdr.polyShim.modality_id      = 0;
         hdr.polyShim.source_crc32     = meta.source_crc32;
@@ -453,13 +448,74 @@ control MyEgress(inout headers hdr,
                  inout metadata meta,
                  inout standard_metadata_t standard_metadata) {
     apply {
-        /*
-         * TODO M4: for scheduled multicast replicas, use egress_port to build:
-         *   2 -> outer IPv4, modality_id 1
-         *   3 -> outer IPv6, modality_id 2
-         *   4 -> Source Routing, modality_id 3
-         * All three replicas must retain one sequence number and one inner IPv4.
-         */
+        if (hdr.polyShim.isValid()) {
+            if (standard_metadata.egress_port == 2) {
+                hdr.ipv4.setValid();
+                hdr.ipv4.version        = 4;
+                hdr.ipv4.ihl            = 5;
+                hdr.ipv4.diffserv       = 0;
+                hdr.ipv4.totalLen       = 78;
+                hdr.ipv4.identification = 0;
+                hdr.ipv4.flags          = 0;
+                hdr.ipv4.fragOffset     = 0;
+                hdr.ipv4.ttl            = 64;
+                hdr.ipv4.protocol       = POLY_IP_PROTOCOL;
+                hdr.ipv4.hdrChecksum    = 0;
+                hdr.ipv4.srcAddr        = hdr.inner_ipv4.srcAddr;
+                hdr.ipv4.dstAddr        = hdr.inner_ipv4.dstAddr;
+                hdr.ethernet.etherType  = TYPE_IPV4;
+                hdr.polyShim.modality_id = MODE_IPV4;
+            }
+            else if (standard_metadata.egress_port == 3) {
+                hdr.ipv6.setValid();
+                hdr.ipv6.version      = 6;
+                hdr.ipv6.trafficClass = 0;
+                hdr.ipv6.flowLabel    = 0;
+                hdr.ipv6.payLoadLen   = 58;
+                hdr.ipv6.nextHdr      = POLY_IP_PROTOCOL;
+                hdr.ipv6.hopLimit     = 64;
+                if (hdr.polyShim.direction == 0) {
+                    hdr.ipv6.srcAddr = 0xfe800000000000000000000000001234;
+                    hdr.ipv6.dstAddr = 0xfe800000000000000000000000005678;
+                } else {
+                    hdr.ipv6.srcAddr = 0xfe800000000000000000000000005678;
+                    hdr.ipv6.dstAddr = 0xfe800000000000000000000000001234;
+                }
+                hdr.ethernet.etherType   = TYPE_IPV6;
+                hdr.polyShim.modality_id = MODE_IPV6;
+            }
+            else if (standard_metadata.egress_port == 4) {
+                if (hdr.polyShim.direction == 0) {
+                    hdr.srcRoutes[0].setValid();
+                    hdr.srcRoutes[0].bos  = 0;
+                    hdr.srcRoutes[0].port = 4;
+                    hdr.srcRoutes[1].setValid();
+                    hdr.srcRoutes[1].bos  = 0;
+                    hdr.srcRoutes[1].port = 2;
+                    hdr.srcRoutes[2].setValid();
+                    hdr.srcRoutes[2].bos  = 0;
+                    hdr.srcRoutes[2].port = 2;
+                    hdr.srcRoutes[3].setValid();
+                    hdr.srcRoutes[3].bos  = 1;
+                    hdr.srcRoutes[3].port = 1;
+                } else {
+                    hdr.srcRoutes[0].setValid();
+                    hdr.srcRoutes[0].bos  = 0;
+                    hdr.srcRoutes[0].port = 4;
+                    hdr.srcRoutes[1].setValid();
+                    hdr.srcRoutes[1].bos  = 0;
+                    hdr.srcRoutes[1].port = 1;
+                    hdr.srcRoutes[2].setValid();
+                    hdr.srcRoutes[2].bos  = 0;
+                    hdr.srcRoutes[2].port = 1;
+                    hdr.srcRoutes[3].setValid();
+                    hdr.srcRoutes[3].bos  = 1;
+                    hdr.srcRoutes[3].port = 1;
+                }
+                hdr.ethernet.etherType   = TYPE_SRCROUTING;
+                hdr.polyShim.modality_id = MODE_SR;
+            }
+        }
     }
 }
 

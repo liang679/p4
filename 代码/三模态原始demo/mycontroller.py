@@ -60,6 +60,30 @@ def writeIpv6_lpmRules(p4info_helper, sw, match_fields, action_params):
     sw.WriteTableEntry(table_entry)
 
 
+def writeMulticastGroup(p4info_helper, switch, group_id=10):
+    replicas = [
+        {"egress_port": 2, "instance": 1},
+        {"egress_port": 3, "instance": 2},
+        {"egress_port": 4, "instance": 3},
+    ]
+    entry = p4info_helper.buildMulticastGroupEntry(group_id, replicas)
+    switch.WritePREEntry(entry)
+
+
+def writePolymorphicScheduleRule(p4info_helper, switch, destination, direction):
+    entry = p4info_helper.buildTableEntry(
+        table_name="MyIngress.polymorphic_schedule",
+        match_fields={
+            "standard_metadata.ingress_port": 1,
+            "hdr.ipv4.dstAddr": destination,
+            "hdr.udp.dstPort": 5000,
+        },
+        action_name="MyIngress.start_polymorphic",
+        action_params={"packet_direction": direction},
+    )
+    switch.WriteTableEntry(entry)
+
+
 def main(p4info_file_path, bmv2_file_path):
     # Instantiate a P4Runtime helper from the p4info file
     p4info_helper = p4runtime_lib.helper.P4InfoHelper(p4info_file_path)
@@ -175,18 +199,13 @@ def main(p4info_file_path, bmv2_file_path):
         writeIpv6_lpmRules(p4info_helper, s21, ["fe80::1234", 128], {"dstAddr": "08:00:00:00:01:00", "port": 1})
         writeIpv6_lpmRules(p4info_helper, s1, ["fe80::1234", 128], {"dstAddr": "08:00:00:00:01:01", "port": 1})
 
-        # STUDENT TODO M3-M5
-        # 1. Add one helper that writes MyIngress.polymorphic_schedule.
-        # 2. Add one helper that creates multicast group 10 with ports 2/3/4.
-        # 3. Install symmetric source/destination gateway roles on s1 and s2.
-        # 4. Add fault-table entries only after the no-fault path is correct.
-        #
-        # Suggested call shape (names are a contract, implementation is yours):
-        # writeMulticastGroup(p4info_helper, s1, group_id=10,
-        #                     replicas=[(2, 1), (3, 2), (4, 3)])
-        # writeMulticastGroup(p4info_helper, s2, group_id=10,
-        #                     replicas=[(2, 1), (3, 2), (4, 3)])
-        
+        # M3/M4: 调度表项与 multicast group
+        writePolymorphicScheduleRule(p4info_helper, s1, "10.0.2.2", 0)
+        writePolymorphicScheduleRule(p4info_helper, s2, "10.0.1.1", 1)
+
+        writeMulticastGroup(p4info_helper, s1, group_id=10)
+        writeMulticastGroup(p4info_helper, s2, group_id=10)
+
 
     except KeyboardInterrupt:
         print(" Shutting down.")
