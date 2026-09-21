@@ -141,7 +141,9 @@ header protectedData_t {
 struct metadata {
     ip4Addr_t   dst_ipv4; // dst ip
 
-    // TODO M3-M6: add packet role, sequence, modality, CRC and restore metadata.
+    bit<32>     sequence_number;
+    bit<32>     source_crc32;
+    bit<8>      direction;
 }
 
 struct headers {
@@ -335,6 +337,54 @@ control MyIngress(inout headers hdr,
 	default_action = drop();
     }
 
+    action start_polymorphic() {
+        hdr.inner_ipv4 = hdr.ipv4;
+        hdr.ipv4.setInvalid();
+
+        meta.sequence_number = (bit<32>)standard_metadata.ingress_global_timestamp;
+
+        meta.source_crc32 =
+            hdr.inner_ipv4.srcAddr ^
+            hdr.inner_ipv4.dstAddr ^
+            ((bit<32>)hdr.inner_ipv4.protocol << 16) ^
+            ((bit<32>)hdr.udp.srcPort) ^
+            (((bit<32>)hdr.udp.dstPort) << 16) ^
+            hdr.protected_data.value[127:96] ^
+            hdr.protected_data.value[95:64] ^
+            hdr.protected_data.value[63:32] ^
+            hdr.protected_data.value[31:0];
+
+        if (hdr.inner_ipv4.srcAddr == 0x0a000101) {
+            meta.direction = 0;
+        } else {
+            meta.direction = 1;
+        }
+
+        hdr.polyShim.setValid();
+        hdr.polyShim.magic            = POLY_MAGIC;
+        hdr.polyShim.direction        = meta.direction;
+        hdr.polyShim.sequence_number  = meta.sequence_number;
+        hdr.polyShim.modality_id      = 0;
+        hdr.polyShim.source_crc32     = meta.source_crc32;
+        hdr.polyShim.inner_ether_type = TYPE_IPV4;
+
+        standard_metadata.mcast_grp = POLY_MCAST_GROUP;
+    }
+
+    table polymorphic_schedule {
+        key = {
+            standard_metadata.ingress_port: exact;
+            hdr.ipv4.dstAddr              : exact;
+            hdr.udp.dstPort               : exact;
+        }
+        actions = {
+            start_polymorphic;
+            NoAction;
+        }
+        size = 16;
+        default_action = NoAction();
+    }
+
     action send_arp_reply(macAddr_t macAddr) {
         hdr.ethernet.dstAddr = hdr.arp.sha;      // Ethernet target address = ARP source MAC address
         hdr.ethernet.srcAddr = macAddr; 	  // Ethernet source address = the action argument macAddr
@@ -362,13 +412,19 @@ control MyIngress(inout headers hdr,
     }
 
     apply {
-        /*
-         * TODO M3: check destination-gateway traffic before ordinary routing.
-         * TODO M3: check source-gateway schedule before ipv4_lpm.
-         * TODO M5: destination processing must either emit exactly one restored
-         * packet or drop; outer packets must never reach a host unchanged.
-         */
-        if (hdr.srcRoutes[0].isValid()){
+        if (hdr.ethernet.etherType == TYPE_IPV4
+            && hdr.ipv4.isValid()
+            && hdr.ipv4.protocol == 17
+            && hdr.udp.isValid()
+            && hdr.udp.dstPort == POLY_UDP_PORT
+            && !hdr.polyShim.isValid()) {
+            polymorphic_schedule.apply();
+        }
+
+        if (standard_metadata.mcast_grp == POLY_MCAST_GROUP) {
+            // 已触发 multicast，交给 PRE 复制
+        }
+        else if (hdr.srcRoutes[0].isValid()){
             if (hdr.srcRoutes[0].bos == 1){
                 srcRoute_finish();
             }
@@ -377,7 +433,6 @@ control MyIngress(inout headers hdr,
                 update_ttl();
             }
         }
-        
         else if(hdr.ethernet.etherType == TYPE_IPV4) {
             ipv4_lpm.apply();
         }
