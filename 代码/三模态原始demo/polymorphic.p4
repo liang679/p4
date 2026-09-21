@@ -9,6 +9,15 @@ const bit<16> TYPE_ARP           = 0x0806;
 
 const bit<16> TYPE_IPV6          = 0x86DD;
 
+const bit<16> POLY_MAGIC         = 0x504f; // ASCII "PO"
+const bit<8>  POLY_IP_PROTOCOL   = 253;
+const bit<16> POLY_UDP_PORT      = 5000;
+const bit<16> POLY_MCAST_GROUP   = 10;
+
+const bit<8>  MODE_IPV4 = 1;
+const bit<8>  MODE_IPV6 = 2;
+const bit<8>  MODE_SR   = 3;
+
 const bit<16> ARP_HTYPE_ETHERNET = 0x0001;
 const bit<16> ARP_PTYPE_IPV4     = 0x0800;
 const bit<8>  ARP_HLEN_ETHERNET  = 6;
@@ -17,6 +26,25 @@ const bit<16> ARP_OPER_REQUEST   = 1;
 const bit<16> ARP_OPER_REPLY     = 2;
 
 #define MAX_HOPS 9
+
+/*
+ * STUDENT TODO ROADMAP
+ *
+ * This starter intentionally remains the verified three-path baseline. It
+ * compiles before any experiment code is added. Complete the extension in
+ * stages and keep every stage compilable:
+ *
+ *   M1: define PolyShim, protected_data and saved inner-IPv4 headers;
+ *   M2: parse UDP dport 5000 with exactly 16 protected bytes;
+ *   M3: add sequence/CRC metadata and an ingress scheduling table;
+ *   M4: set mcast_grp and build IPv4/IPv6/SR outer headers in MyEgress;
+ *   M5: add destination-gateway register state and 2-out-of-3 adjudication;
+ *   M6: restore the original IPv4 packet and emit it at host-facing port 1.
+ *
+ * The field contract and pseudocode are in STUDENT_TODO.md. Do not paste a
+ * complete solution here first: implement and validate one milestone at a
+ * time so a failing stage can be located from pcap and counter evidence.
+ */
 
 /*************************************************************************
 *********************** H E A D E R S  ***********************************
@@ -97,8 +125,23 @@ header udp_t {
     bit<16> checksum;
 }
 
+header polyShim_t {
+    bit<16> magic;
+    bit<8>  direction;
+    bit<32> sequence_number;
+    bit<8>  modality_id;
+    bit<32> source_crc32;
+    bit<16> inner_ether_type;
+}
+
+header protectedData_t {
+    bit<128> value;
+}
+
 struct metadata {
     ip4Addr_t   dst_ipv4; // dst ip
+
+    // TODO M3-M6: add packet role, sequence, modality, CRC and restore metadata.
 }
 
 struct headers {
@@ -107,8 +150,11 @@ struct headers {
     arp_t       arp;
     ipv4_t      ipv4;
     ipv6_t      ipv6;
+    polyShim_t  polyShim;
+    ipv4_t      inner_ipv4;
     tcp_t       tcp;
     udp_t       udp;
+    protectedData_t protected_data;
 }
 
 /*************************************************************************
@@ -169,6 +215,9 @@ parser MyParser(packet_in packet,
 
     state parse_udp {
         packet.extract(hdr.udp);
+
+        // TODO M2: only the fixed UDP/5000 experiment format continues to
+        // PolyShim/protected-data parsing. Ordinary UDP must remain accepted.
         transition accept;
     }
 
@@ -276,6 +325,12 @@ control MyIngress(inout headers hdr,
     }
 
     apply {
+        /*
+         * TODO M3: check destination-gateway traffic before ordinary routing.
+         * TODO M3: check source-gateway schedule before ipv4_lpm.
+         * TODO M5: destination processing must either emit exactly one restored
+         * packet or drop; outer packets must never reach a host unchanged.
+         */
         if (hdr.srcRoutes[0].isValid()){
             if (hdr.srcRoutes[0].bos == 1){
                 srcRoute_finish();
@@ -305,7 +360,15 @@ control MyIngress(inout headers hdr,
 control MyEgress(inout headers hdr,
                  inout metadata meta,
                  inout standard_metadata_t standard_metadata) {
-    apply {  }
+    apply {
+        /*
+         * TODO M4: for scheduled multicast replicas, use egress_port to build:
+         *   2 -> outer IPv4, modality_id 1
+         *   3 -> outer IPv6, modality_id 2
+         *   4 -> Source Routing, modality_id 3
+         * All three replicas must retain one sequence number and one inner IPv4.
+         */
+    }
 }
 
 /*************************************************************************
@@ -338,13 +401,18 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
 
 control MyDeparser(packet_out packet, in headers hdr) {
     apply {
+        // TODO M1/M4/M6: emit newly introduced outer/PolyShim/inner headers in
+        // wire order. Header validity decides which modality is serialized.
         packet.emit(hdr.ethernet);
         packet.emit(hdr.srcRoutes);
         packet.emit(hdr.arp);
         packet.emit(hdr.ipv4);
         packet.emit(hdr.ipv6);
+        packet.emit(hdr.polyShim);
+        packet.emit(hdr.inner_ipv4);
         packet.emit(hdr.tcp);
         packet.emit(hdr.udp);
+        packet.emit(hdr.protected_data);
     }
 }
 
