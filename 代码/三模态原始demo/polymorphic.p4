@@ -183,8 +183,15 @@ parser MyParser(packet_in packet,
     state parse_srcRouting {
         packet.extract(hdr.srcRoutes.next);
         transition select(hdr.srcRoutes.last.bos) {
-            1: parse_ipv4;
+            1: parse_after_sr;
             default: parse_srcRouting;
+        }
+    }
+
+    state parse_after_sr {
+        transition select(packet.lookahead<bit<16>>()) {
+            POLY_MAGIC: parse_polyShim;
+            default: parse_ipv4;
         }
     }
     
@@ -199,13 +206,17 @@ parser MyParser(packet_in packet,
         transition select(hdr.ipv4.protocol) {
             6: parse_tcp;
             17: parse_udp;
+            POLY_IP_PROTOCOL: parse_polyShim;
             default: accept;
         }
     }
     
-    state parse_ipv6{
-	packet.extract(hdr.ipv6);
-	transition accept;
+    state parse_ipv6 {
+        packet.extract(hdr.ipv6);
+        transition select(hdr.ipv6.nextHdr) {
+            POLY_IP_PROTOCOL: parse_polyShim;
+            default: accept;
+        }
     }
 
     state parse_tcp {
@@ -215,9 +226,35 @@ parser MyParser(packet_in packet,
 
     state parse_udp {
         packet.extract(hdr.udp);
+        transition select(hdr.udp.dstPort) {
+            POLY_UDP_PORT: parse_protected;
+            default: accept;
+        }
+    }
 
-        // TODO M2: only the fixed UDP/5000 experiment format continues to
-        // PolyShim/protected-data parsing. Ordinary UDP must remain accepted.
+    state parse_polyShim {
+        packet.extract(hdr.polyShim);
+        transition parse_inner_ipv4;
+    }
+
+    state parse_inner_ipv4 {
+        packet.extract(hdr.inner_ipv4);
+        transition select(hdr.inner_ipv4.protocol) {
+            17: parse_inner_udp;
+            default: accept;
+        }
+    }
+
+    state parse_inner_udp {
+        packet.extract(hdr.udp);
+        transition select(hdr.udp.dstPort) {
+            POLY_UDP_PORT: parse_protected;
+            default: accept;
+        }
+    }
+
+    state parse_protected {
+        packet.extract(hdr.protected_data);
         transition accept;
     }
 
