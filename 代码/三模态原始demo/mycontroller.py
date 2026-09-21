@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""Verified three-path baseline controller used as the student starter.
+
+The baseline installs ordinary IPv4 and IPv6 forwarding only. Follow the
+milestones in STUDENT_TODO.md to add multicast scheduling, gateway roles,
+fault injection and counter reads. Keep this file runnable after every step.
+"""
+
 import argparse
 import grpc
 import os
@@ -167,6 +174,18 @@ def main(p4info_file_path, bmv2_file_path):
         writeIpv6_lpmRules(p4info_helper, s22, ["fe80::1234", 128], {"dstAddr": "08:00:00:00:11:00", "port": 1})
         writeIpv6_lpmRules(p4info_helper, s21, ["fe80::1234", 128], {"dstAddr": "08:00:00:00:01:00", "port": 1})
         writeIpv6_lpmRules(p4info_helper, s1, ["fe80::1234", 128], {"dstAddr": "08:00:00:00:01:01", "port": 1})
+
+        # STUDENT TODO M3-M5
+        # 1. Add one helper that writes MyIngress.polymorphic_schedule.
+        # 2. Add one helper that creates multicast group 10 with ports 2/3/4.
+        # 3. Install symmetric source/destination gateway roles on s1 and s2.
+        # 4. Add fault-table entries only after the no-fault path is correct.
+        #
+        # Suggested call shape (names are a contract, implementation is yours):
+        # writeMulticastGroup(p4info_helper, s1, group_id=10,
+        #                     replicas=[(2, 1), (3, 2), (4, 3)])
+        # writeMulticastGroup(p4info_helper, s2, group_id=10,
+        #                     replicas=[(2, 1), (3, 2), (4, 3)])
         
 
     except KeyboardInterrupt:
