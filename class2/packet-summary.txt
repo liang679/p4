@@ -1,0 +1,27 @@
+实验二 packet 摘要
+
+发送证据：
+  h1 python3 send-poly.py 10.0.2.2 class2-test 只打印一条 POLY_SEND
+  h2 python3 send-poly.py 10.0.1.1 reverse-test 只打印一条 POLY_SEND
+
+序号与 CRC 产生位置：
+  MyIngress.start_polymorphic 内生成，复制前完成，三份副本共享同一 sequence_number 和 source_crc32。
+  sequence_number 取 standard_metadata.ingress_global_timestamp 低 32 位。
+  source_crc32 覆盖内层 IPv4 源/目的地址、协议号、UDP 源/目的端口、16 字节 protected_data。
+
+三份副本出口与封装对应：
+  egress_port=2  modality_id=1  outer IPv4   protocol=253      路径 s1-s11-s12-s2
+  egress_port=3  modality_id=2  outer IPv6   nextHdr=253       路径 s1-s21-s22-s2
+  egress_port=4  modality_id=3  SourceRouting EtherType=0x1234 路径 s1-s31-s32-s2
+
+证据文件：
+  evidence/s1-eth2_out-ipv4.pcap  -> outer IPv4, protocol 253
+  evidence/s1-eth3_out-ipv6.pcap  -> outer IPv6, next header 253
+  evidence/s1-eth4_out-sr.pcap    -> EtherType 0x1234, POLY_MAGIC 0x504f, 端口栈 4 2 2 1
+  evidence/s2-eth2_out-ipv4-reverse.pcap
+  evidence/s2-eth3_out-ipv6-reverse.pcap
+  evidence/s2-eth4_out-sr-reverse.pcap -> 端口栈 4 1 1 1
+
+结论：
+  主机只发一份，源网关 S1/S2 内部复制成三份，序号相同、模态编号不同，
+  分别进入 IPv4/IPv6/SR 三条路径，正向反向均成立。
