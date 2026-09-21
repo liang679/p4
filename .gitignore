@@ -27,3 +27,7 @@
 **/*.fix3-backup
 **/*.m5-fix-backup
 **/*.before-fix2
+**/*.fault-backup
+**/*.fix3-backup
+**/*.m5-fix-backup
+**/*.before-fix2
