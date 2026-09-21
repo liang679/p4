@@ -1,0 +1,14 @@
+成员分工：
+  <成员1>：M1/M2 P4 header 和 Parser
+  <成员2>：M3 Ingress 调度、序号、CRC
+  <成员3>：M4 Egress 封装与 mycontroller multicast
+  <成员4>：pcap 证据和原有功能验证
+
+进度：
+  M1 完成，编译通过
+  M2 完成，IPv4/IPv6/SR 原有功能仍正常
+  M3 完成，调度表与 multicast group 配置
+  M4 完成，正向反向三份副本分别进入三条路径
+
+未解决问题：
+  目的网关 M5/M6 未实现，留到下次实验。

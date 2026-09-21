@@ -1,5 +1,19 @@
+# 编译产物
+**/build/
 **/pcaps/
 **/logs/
-**/build/
 **/__pycache__/
 *.pyc
+
+# 备份文件
+**/*.m1-backup
+**/*.m2-backup
+**/*.m3-backup
+**/*.m4-backup
+**/*.backup
+代码/三模态原始demo-baseline-backup/
+
+# 桌面杂项
+截图 *.png
+*.pdf
+运行结果/

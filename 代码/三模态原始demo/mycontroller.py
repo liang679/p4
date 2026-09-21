@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""Verified three-path baseline controller used as the student starter.
+
+The baseline installs ordinary IPv4 and IPv6 forwarding only. Follow the
+milestones in STUDENT_TODO.md to add multicast scheduling, gateway roles,
+fault injection and counter reads. Keep this file runnable after every step.
+"""
+
 import argparse
 import grpc
 import os
@@ -51,6 +58,30 @@ def writeIpv6_lpmRules(p4info_helper, sw, match_fields, action_params):
         action_params=action_params
         )
     sw.WriteTableEntry(table_entry)
+
+
+def writeMulticastGroup(p4info_helper, switch, group_id=10):
+    replicas = [
+        {"egress_port": 2, "instance": 1},
+        {"egress_port": 3, "instance": 2},
+        {"egress_port": 4, "instance": 3},
+    ]
+    entry = p4info_helper.buildMulticastGroupEntry(group_id, replicas)
+    switch.WritePREEntry(entry)
+
+
+def writePolymorphicScheduleRule(p4info_helper, switch, destination, direction):
+    entry = p4info_helper.buildTableEntry(
+        table_name="MyIngress.polymorphic_schedule",
+        match_fields={
+            "standard_metadata.ingress_port": 1,
+            "hdr.ipv4.dstAddr": destination,
+            "hdr.udp.dstPort": 5000,
+        },
+        action_name="MyIngress.start_polymorphic",
+        action_params={"packet_direction": direction},
+    )
+    switch.WriteTableEntry(entry)
 
 
 def main(p4info_file_path, bmv2_file_path):
@@ -167,7 +198,14 @@ def main(p4info_file_path, bmv2_file_path):
         writeIpv6_lpmRules(p4info_helper, s22, ["fe80::1234", 128], {"dstAddr": "08:00:00:00:11:00", "port": 1})
         writeIpv6_lpmRules(p4info_helper, s21, ["fe80::1234", 128], {"dstAddr": "08:00:00:00:01:00", "port": 1})
         writeIpv6_lpmRules(p4info_helper, s1, ["fe80::1234", 128], {"dstAddr": "08:00:00:00:01:01", "port": 1})
-        
+
+        # M3/M4: 调度表项与 multicast group
+        writePolymorphicScheduleRule(p4info_helper, s1, "10.0.2.2", 0)
+        writePolymorphicScheduleRule(p4info_helper, s2, "10.0.1.1", 1)
+
+        writeMulticastGroup(p4info_helper, s1, group_id=10)
+        writeMulticastGroup(p4info_helper, s2, group_id=10)
+
 
     except KeyboardInterrupt:
         print(" Shutting down.")

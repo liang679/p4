@@ -9,6 +9,15 @@ const bit<16> TYPE_ARP           = 0x0806;
 
 const bit<16> TYPE_IPV6          = 0x86DD;
 
+const bit<16> POLY_MAGIC         = 0x504f; // ASCII "PO"
+const bit<8>  POLY_IP_PROTOCOL   = 253;
+const bit<16> POLY_UDP_PORT      = 5000;
+const bit<16> POLY_MCAST_GROUP   = 10;
+
+const bit<8>  MODE_IPV4 = 1;
+const bit<8>  MODE_IPV6 = 2;
+const bit<8>  MODE_SR   = 3;
+
 const bit<16> ARP_HTYPE_ETHERNET = 0x0001;
 const bit<16> ARP_PTYPE_IPV4     = 0x0800;
 const bit<8>  ARP_HLEN_ETHERNET  = 6;
@@ -17,6 +26,25 @@ const bit<16> ARP_OPER_REQUEST   = 1;
 const bit<16> ARP_OPER_REPLY     = 2;
 
 #define MAX_HOPS 9
+
+/*
+ * STUDENT TODO ROADMAP
+ *
+ * This starter intentionally remains the verified three-path baseline. It
+ * compiles before any experiment code is added. Complete the extension in
+ * stages and keep every stage compilable:
+ *
+ *   M1: define PolyShim, protected_data and saved inner-IPv4 headers;
+ *   M2: parse UDP dport 5000 with exactly 16 protected bytes;
+ *   M3: add sequence/CRC metadata and an ingress scheduling table;
+ *   M4: set mcast_grp and build IPv4/IPv6/SR outer headers in MyEgress;
+ *   M5: add destination-gateway register state and 2-out-of-3 adjudication;
+ *   M6: restore the original IPv4 packet and emit it at host-facing port 1.
+ *
+ * The field contract and pseudocode are in STUDENT_TODO.md. Do not paste a
+ * complete solution here first: implement and validate one milestone at a
+ * time so a failing stage can be located from pcap and counter evidence.
+ */
 
 /*************************************************************************
 *********************** H E A D E R S  ***********************************
@@ -97,8 +125,25 @@ header udp_t {
     bit<16> checksum;
 }
 
+header polyShim_t {
+    bit<16> magic;
+    bit<8>  direction;
+    bit<32> sequence_number;
+    bit<8>  modality_id;
+    bit<32> source_crc32;
+    bit<16> inner_ether_type;
+}
+
+header protectedData_t {
+    bit<128> value;
+}
+
 struct metadata {
     ip4Addr_t   dst_ipv4; // dst ip
+
+    bit<32>     sequence_number;
+    bit<32>     source_crc32;
+    bit<8>      direction;
 }
 
 struct headers {
@@ -107,8 +152,11 @@ struct headers {
     arp_t       arp;
     ipv4_t      ipv4;
     ipv6_t      ipv6;
+    polyShim_t  polyShim;
+    ipv4_t      inner_ipv4;
     tcp_t       tcp;
     udp_t       udp;
+    protectedData_t protected_data;
 }
 
 /*************************************************************************
@@ -137,8 +185,15 @@ parser MyParser(packet_in packet,
     state parse_srcRouting {
         packet.extract(hdr.srcRoutes.next);
         transition select(hdr.srcRoutes.last.bos) {
-            1: parse_ipv4;
+            1: parse_after_sr;
             default: parse_srcRouting;
+        }
+    }
+
+    state parse_after_sr {
+        transition select(packet.lookahead<bit<16>>()) {
+            POLY_MAGIC: parse_polyShim;
+            default: parse_ipv4;
         }
     }
     
@@ -153,13 +208,17 @@ parser MyParser(packet_in packet,
         transition select(hdr.ipv4.protocol) {
             6: parse_tcp;
             17: parse_udp;
+            POLY_IP_PROTOCOL: parse_polyShim;
             default: accept;
         }
     }
     
-    state parse_ipv6{
-	packet.extract(hdr.ipv6);
-	transition accept;
+    state parse_ipv6 {
+        packet.extract(hdr.ipv6);
+        transition select(hdr.ipv6.nextHdr) {
+            POLY_IP_PROTOCOL: parse_polyShim;
+            default: accept;
+        }
     }
 
     state parse_tcp {
@@ -169,6 +228,35 @@ parser MyParser(packet_in packet,
 
     state parse_udp {
         packet.extract(hdr.udp);
+        transition select(hdr.udp.dstPort) {
+            POLY_UDP_PORT: parse_protected;
+            default: accept;
+        }
+    }
+
+    state parse_polyShim {
+        packet.extract(hdr.polyShim);
+        transition parse_inner_ipv4;
+    }
+
+    state parse_inner_ipv4 {
+        packet.extract(hdr.inner_ipv4);
+        transition select(hdr.inner_ipv4.protocol) {
+            17: parse_inner_udp;
+            default: accept;
+        }
+    }
+
+    state parse_inner_udp {
+        packet.extract(hdr.udp);
+        transition select(hdr.udp.dstPort) {
+            POLY_UDP_PORT: parse_protected;
+            default: accept;
+        }
+    }
+
+    state parse_protected {
+        packet.extract(hdr.protected_data);
         transition accept;
     }
 
@@ -249,6 +337,49 @@ control MyIngress(inout headers hdr,
 	default_action = drop();
     }
 
+    action start_polymorphic(bit<8> packet_direction) {
+        hdr.inner_ipv4 = hdr.ipv4;
+        hdr.ipv4.setInvalid();
+
+        meta.sequence_number = (bit<32>)standard_metadata.ingress_global_timestamp;
+        meta.direction = packet_direction;
+
+        meta.source_crc32 =
+            hdr.inner_ipv4.srcAddr ^
+            hdr.inner_ipv4.dstAddr ^
+            ((bit<32>)hdr.inner_ipv4.protocol << 16) ^
+            ((bit<32>)hdr.udp.srcPort) ^
+            (((bit<32>)hdr.udp.dstPort) << 16) ^
+            hdr.protected_data.value[127:96] ^
+            hdr.protected_data.value[95:64] ^
+            hdr.protected_data.value[63:32] ^
+            hdr.protected_data.value[31:0];
+
+        hdr.polyShim.setValid();
+        hdr.polyShim.magic            = POLY_MAGIC;
+        hdr.polyShim.direction        = packet_direction;
+        hdr.polyShim.sequence_number  = meta.sequence_number;
+        hdr.polyShim.modality_id      = 0;
+        hdr.polyShim.source_crc32     = meta.source_crc32;
+        hdr.polyShim.inner_ether_type = TYPE_IPV4;
+
+        standard_metadata.mcast_grp = POLY_MCAST_GROUP;
+    }
+
+    table polymorphic_schedule {
+        key = {
+            standard_metadata.ingress_port: exact;
+            hdr.ipv4.dstAddr              : exact;
+            hdr.udp.dstPort               : exact;
+        }
+        actions = {
+            start_polymorphic;
+            NoAction;
+        }
+        size = 16;
+        default_action = NoAction();
+    }
+
     action send_arp_reply(macAddr_t macAddr) {
         hdr.ethernet.dstAddr = hdr.arp.sha;      // Ethernet target address = ARP source MAC address
         hdr.ethernet.srcAddr = macAddr; 	  // Ethernet source address = the action argument macAddr
@@ -276,7 +407,19 @@ control MyIngress(inout headers hdr,
     }
 
     apply {
-        if (hdr.srcRoutes[0].isValid()){
+        if (hdr.ethernet.etherType == TYPE_IPV4
+            && hdr.ipv4.isValid()
+            && hdr.ipv4.protocol == 17
+            && hdr.udp.isValid()
+            && hdr.udp.dstPort == POLY_UDP_PORT
+            && !hdr.polyShim.isValid()) {
+            polymorphic_schedule.apply();
+        }
+
+        if (standard_metadata.mcast_grp == POLY_MCAST_GROUP) {
+            // 已触发 multicast，交给 PRE 复制
+        }
+        else if (hdr.srcRoutes[0].isValid()){
             if (hdr.srcRoutes[0].bos == 1){
                 srcRoute_finish();
             }
@@ -285,7 +428,6 @@ control MyIngress(inout headers hdr,
                 update_ttl();
             }
         }
-        
         else if(hdr.ethernet.etherType == TYPE_IPV4) {
             ipv4_lpm.apply();
         }
@@ -305,7 +447,76 @@ control MyIngress(inout headers hdr,
 control MyEgress(inout headers hdr,
                  inout metadata meta,
                  inout standard_metadata_t standard_metadata) {
-    apply {  }
+    apply {
+        if (hdr.polyShim.isValid()) {
+            if (standard_metadata.egress_port == 2) {
+                hdr.ipv4.setValid();
+                hdr.ipv4.version        = 4;
+                hdr.ipv4.ihl            = 5;
+                hdr.ipv4.diffserv       = 0;
+                hdr.ipv4.totalLen       = 78;
+                hdr.ipv4.identification = 0;
+                hdr.ipv4.flags          = 0;
+                hdr.ipv4.fragOffset     = 0;
+                hdr.ipv4.ttl            = 64;
+                hdr.ipv4.protocol       = POLY_IP_PROTOCOL;
+                hdr.ipv4.hdrChecksum    = 0;
+                hdr.ipv4.srcAddr        = hdr.inner_ipv4.srcAddr;
+                hdr.ipv4.dstAddr        = hdr.inner_ipv4.dstAddr;
+                hdr.ethernet.etherType  = TYPE_IPV4;
+                hdr.polyShim.modality_id = MODE_IPV4;
+            }
+            else if (standard_metadata.egress_port == 3) {
+                hdr.ipv6.setValid();
+                hdr.ipv6.version      = 6;
+                hdr.ipv6.trafficClass = 0;
+                hdr.ipv6.flowLabel    = 0;
+                hdr.ipv6.payLoadLen   = 58;
+                hdr.ipv6.nextHdr      = POLY_IP_PROTOCOL;
+                hdr.ipv6.hopLimit     = 64;
+                if (hdr.polyShim.direction == 0) {
+                    hdr.ipv6.srcAddr = 0xfe800000000000000000000000001234;
+                    hdr.ipv6.dstAddr = 0xfe800000000000000000000000005678;
+                } else {
+                    hdr.ipv6.srcAddr = 0xfe800000000000000000000000005678;
+                    hdr.ipv6.dstAddr = 0xfe800000000000000000000000001234;
+                }
+                hdr.ethernet.etherType   = TYPE_IPV6;
+                hdr.polyShim.modality_id = MODE_IPV6;
+            }
+            else if (standard_metadata.egress_port == 4) {
+                if (hdr.polyShim.direction == 0) {
+                    hdr.srcRoutes[0].setValid();
+                    hdr.srcRoutes[0].bos  = 0;
+                    hdr.srcRoutes[0].port = 4;
+                    hdr.srcRoutes[1].setValid();
+                    hdr.srcRoutes[1].bos  = 0;
+                    hdr.srcRoutes[1].port = 2;
+                    hdr.srcRoutes[2].setValid();
+                    hdr.srcRoutes[2].bos  = 0;
+                    hdr.srcRoutes[2].port = 2;
+                    hdr.srcRoutes[3].setValid();
+                    hdr.srcRoutes[3].bos  = 1;
+                    hdr.srcRoutes[3].port = 1;
+                } else {
+                    hdr.srcRoutes[0].setValid();
+                    hdr.srcRoutes[0].bos  = 0;
+                    hdr.srcRoutes[0].port = 4;
+                    hdr.srcRoutes[1].setValid();
+                    hdr.srcRoutes[1].bos  = 0;
+                    hdr.srcRoutes[1].port = 1;
+                    hdr.srcRoutes[2].setValid();
+                    hdr.srcRoutes[2].bos  = 0;
+                    hdr.srcRoutes[2].port = 1;
+                    hdr.srcRoutes[3].setValid();
+                    hdr.srcRoutes[3].bos  = 1;
+                    hdr.srcRoutes[3].port = 1;
+                }
+                hdr.ethernet.etherType   = TYPE_SRCROUTING;
+                hdr.polyShim.modality_id = MODE_SR;
+            }
+        }
+    }
 }
 
 /*************************************************************************
@@ -338,13 +549,18 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
 
 control MyDeparser(packet_out packet, in headers hdr) {
     apply {
+        // TODO M1/M4/M6: emit newly introduced outer/PolyShim/inner headers in
+        // wire order. Header validity decides which modality is serialized.
         packet.emit(hdr.ethernet);
         packet.emit(hdr.srcRoutes);
         packet.emit(hdr.arp);
         packet.emit(hdr.ipv4);
         packet.emit(hdr.ipv6);
+        packet.emit(hdr.polyShim);
+        packet.emit(hdr.inner_ipv4);
         packet.emit(hdr.tcp);
         packet.emit(hdr.udp);
+        packet.emit(hdr.protected_data);
     }
 }
 
