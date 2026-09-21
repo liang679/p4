@@ -144,6 +144,11 @@ struct metadata {
     bit<32>     sequence_number;
     bit<32>     source_crc32;
     bit<8>      direction;
+
+    // M5 裁决临时字段
+    bit<32>     adj_slot;
+    bit<32>     observed_crc;
+    bit<1>      output_now;
 }
 
 struct headers {
@@ -280,6 +285,21 @@ control MyIngress(inout headers hdr,
                   inout metadata meta,
                   inout standard_metadata_t standard_metadata) {
 
+    // M5 裁决状态窗口
+    register<bit<32>>(1024) seq_tag_reg;
+    register<bit<32>>(1024) crc_cand1_reg;
+    register<bit<32>>(1024) crc_cand2_reg;
+    register<bit<8>>(1024)  mode_cand1_reg;
+    register<bit<8>>(1024)  mode_cand2_reg;
+    register<bit<8>>(1024)  seen_modes_reg;
+    register<bit<2>>(1024)  cand_count_reg;
+    register<bit<1>>(1024)  decided_reg;
+    register<bit<32>>(1024) decided_crc_reg;
+
+    counter(4, CounterType.packets) mode_good;
+    counter(4, CounterType.packets) mode_bad;
+    counter(1, CounterType.packets) no_majority_cnt;
+
     action drop() {
         mark_to_drop(standard_metadata);
     }
@@ -366,6 +386,173 @@ control MyIngress(inout headers hdr,
         standard_metadata.mcast_grp = POLY_MCAST_GROUP;
     }
 
+    action do_adjudicate() {
+        meta.adj_slot = hdr.polyShim.sequence_number & 1023;
+
+        bit<32> cur_seq_tag;
+        bit<32> cur_cand1;
+        bit<32> cur_cand2;
+        bit<8>  cur_mode1;
+        bit<8>  cur_mode2;
+        bit<8>  cur_seen;
+        bit<2>  cur_count;
+        bit<1>  cur_decided;
+        bit<32> cur_winner;
+
+        seq_tag_reg.read(cur_seq_tag, meta.adj_slot);
+        crc_cand1_reg.read(cur_cand1, meta.adj_slot);
+        crc_cand2_reg.read(cur_cand2, meta.adj_slot);
+        mode_cand1_reg.read(cur_mode1, meta.adj_slot);
+        mode_cand2_reg.read(cur_mode2, meta.adj_slot);
+        seen_modes_reg.read(cur_seen, meta.adj_slot);
+        cand_count_reg.read(cur_count, meta.adj_slot);
+        decided_reg.read(cur_decided, meta.adj_slot);
+        decided_crc_reg.read(cur_winner, meta.adj_slot);
+
+        if (cur_seq_tag != hdr.polyShim.sequence_number) {
+            cur_seq_tag  = hdr.polyShim.sequence_number;
+            cur_cand1    = 0;
+            cur_cand2    = 0;
+            cur_mode1    = 0;
+            cur_mode2    = 0;
+            cur_seen     = 0;
+            cur_count    = 0;
+            cur_decided  = 0;
+            cur_winner   = 0;
+        }
+
+        meta.observed_crc =
+            hdr.inner_ipv4.srcAddr ^
+            hdr.inner_ipv4.dstAddr ^
+            ((bit<32>)hdr.inner_ipv4.protocol << 16) ^
+            ((bit<32>)hdr.udp.srcPort) ^
+            (((bit<32>)hdr.udp.dstPort) << 16) ^
+            hdr.protected_data.value[127:96] ^
+            hdr.protected_data.value[95:64] ^
+            hdr.protected_data.value[63:32] ^
+            hdr.protected_data.value[31:0];
+
+        bit<8>  mode     = hdr.polyShim.modality_id;
+        bit<8>  seen_bit = (bit<8>)1 << (mode - 1);
+
+        if ((cur_seen & seen_bit) != 0) {
+            meta.output_now = 0;
+        } else {
+            cur_seen = cur_seen | seen_bit;
+
+            if (cur_decided == 1) {
+                if (cur_winner != 0 && meta.observed_crc == cur_winner) {
+                    mode_good.count((bit<32>)mode);
+                } else {
+                    mode_bad.count((bit<32>)mode);
+                }
+                meta.output_now = 0;
+            }
+            else if (cur_count == 0) {
+                cur_cand1 = meta.observed_crc;
+                cur_mode1 = mode;
+                cur_count = 1;
+                meta.output_now = 0;
+            }
+            else if (cur_count == 1) {
+                if (meta.observed_crc == cur_cand1) {
+                    cur_decided = 1;
+                    cur_winner  = cur_cand1;
+                    mode_good.count((bit<32>)cur_mode1);
+                    mode_good.count((bit<32>)mode);
+                    meta.output_now = 1;
+                } else {
+                    cur_cand2 = meta.observed_crc;
+                    cur_mode2 = mode;
+                    cur_count = 2;
+                    meta.output_now = 0;
+                }
+            }
+            else {
+                cur_decided = 1;
+                if (meta.observed_crc == cur_cand1) {
+                    cur_winner = cur_cand1;
+                    mode_good.count((bit<32>)cur_mode1);
+                    mode_bad.count((bit<32>)cur_mode2);
+                    mode_good.count((bit<32>)mode);
+                    meta.output_now = 1;
+                }
+                else if (meta.observed_crc == cur_cand2) {
+                    cur_winner = cur_cand2;
+                    mode_bad.count((bit<32>)cur_mode1);
+                    mode_good.count((bit<32>)cur_mode2);
+                    mode_good.count((bit<32>)mode);
+                    meta.output_now = 1;
+                }
+                else {
+                    cur_winner = 0;
+                    no_majority_cnt.count((bit<32>)0);
+                    meta.output_now = 0;
+                }
+            }
+
+            seq_tag_reg.write(meta.adj_slot, cur_seq_tag);
+            crc_cand1_reg.write(meta.adj_slot, cur_cand1);
+            crc_cand2_reg.write(meta.adj_slot, cur_cand2);
+            mode_cand1_reg.write(meta.adj_slot, cur_mode1);
+            mode_cand2_reg.write(meta.adj_slot, cur_mode2);
+            seen_modes_reg.write(meta.adj_slot, cur_seen);
+            cand_count_reg.write(meta.adj_slot, cur_count);
+            decided_reg.write(meta.adj_slot, cur_decided);
+            decided_crc_reg.write(meta.adj_slot, cur_winner);
+        }
+    }
+
+    action restore_and_forward() {
+        // 用保存的 inner_ipv4 替换外层
+        hdr.ipv4              = hdr.inner_ipv4;
+        hdr.ipv4.version      = 4;
+        hdr.ipv4.ihl          = 5;
+        hdr.ipv4.totalLen     = 44;
+        hdr.ipv4.protocol     = 17;
+        hdr.ipv4.ttl          = 64;
+        hdr.ipv4.hdrChecksum  = 0;
+        hdr.ipv4.setValid();
+
+        hdr.inner_ipv4.setInvalid();
+        hdr.ipv6.setInvalid();
+        hdr.polyShim.setInvalid();
+
+        hdr.srcRoutes[0].setInvalid();
+        hdr.srcRoutes[1].setInvalid();
+        hdr.srcRoutes[2].setInvalid();
+        hdr.srcRoutes[3].setInvalid();
+        hdr.srcRoutes[4].setInvalid();
+        hdr.srcRoutes[5].setInvalid();
+        hdr.srcRoutes[6].setInvalid();
+        hdr.srcRoutes[7].setInvalid();
+        hdr.srcRoutes[8].setInvalid();
+
+        hdr.ethernet.etherType = TYPE_IPV4;
+
+        if (meta.direction == 0) {
+            hdr.ethernet.dstAddr = 0x080000000202;
+            hdr.ethernet.srcAddr = 0x080000000200;
+        } else {
+            hdr.ethernet.dstAddr = 0x080000000101;
+            hdr.ethernet.srcAddr = 0x080000000100;
+        }
+
+        standard_metadata.egress_spec = 1;
+    }
+
+    table gateway_role {
+        key = {
+            standard_metadata.ingress_port: exact;
+        }
+        actions = {
+            do_adjudicate;
+            NoAction;
+        }
+        size = 8;
+        default_action = NoAction();
+    }
+
     table polymorphic_schedule {
         key = {
             standard_metadata.ingress_port: exact;
@@ -416,7 +603,17 @@ control MyIngress(inout headers hdr,
             polymorphic_schedule.apply();
         }
 
-        if (standard_metadata.mcast_grp == POLY_MCAST_GROUP) {
+        if (hdr.polyShim.isValid()) {
+            gateway_role.apply();
+            if (meta.output_now == 1) {
+                restore_and_forward();
+            }
+        }
+
+        if (hdr.polyShim.isValid()) {
+            // 内部副本已处理，跳过普通路由
+        }
+        else if (standard_metadata.mcast_grp == POLY_MCAST_GROUP) {
             // 已触发 multicast，交给 PRE 复制
         }
         else if (hdr.srcRoutes[0].isValid()){

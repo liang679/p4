@@ -84,6 +84,19 @@ def writePolymorphicScheduleRule(p4info_helper, switch, destination, direction):
     switch.WriteTableEntry(entry)
 
 
+def writeGatewayRoleRules(p4info_helper, switch, ports):
+    for port in ports:
+        entry = p4info_helper.buildTableEntry(
+            table_name="MyIngress.gateway_role",
+            match_fields={
+                "standard_metadata.ingress_port": port,
+            },
+            action_name="MyIngress.do_adjudicate",
+            action_params={},
+        )
+        switch.WriteTableEntry(entry)
+
+
 def main(p4info_file_path, bmv2_file_path):
     # Instantiate a P4Runtime helper from the p4info file
     p4info_helper = p4runtime_lib.helper.P4InfoHelper(p4info_file_path)
@@ -205,6 +218,10 @@ def main(p4info_file_path, bmv2_file_path):
 
         writeMulticastGroup(p4info_helper, s1, group_id=10)
         writeMulticastGroup(p4info_helper, s2, group_id=10)
+
+        # M5: 目的网关角色。S1/S2 的 p2/p3/p4 是副本入口
+        writeGatewayRoleRules(p4info_helper, s1, [2, 3, 4])
+        writeGatewayRoleRules(p4info_helper, s2, [2, 3, 4])
 
 
     except KeyboardInterrupt:
