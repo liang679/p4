@@ -650,8 +650,8 @@ control MyIngress(inout headers hdr,
             }
         }
 
-        if (meta.adj_done == 1) {
-            // 已由目的网关处理完毕
+        if (meta.adj_done == 1 || meta.fault_hit == 1) {
+            // 已由目的网关处理完毕，或被 fault_drop 丢弃
         }
         else if (standard_metadata.mcast_grp == POLY_MCAST_GROUP) {
             // 已触发 multicast，交给 PRE 复制

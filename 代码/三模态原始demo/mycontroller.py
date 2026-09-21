@@ -239,36 +239,39 @@ def main(p4info_file_path, bmv2_file_path):
         writeGatewayRoleRules(p4info_helper, s2, [2, 3, 4])
 
         # 故障注入
-        fault_arg = None
-        for i, a in enumerate(sys.argv):
-            if a == '--fault' and i + 1 < len(sys.argv):
-                fault_arg = sys.argv[i + 1]
-        if fault_arg:
-            parts = fault_arg.split(':')
-            target_map = {'1': s11, '2': s21, '3': s31}
-            if parts[0] == 'corrupt':
-                mode = int(parts[1])
-                mask = int(parts[3], 16)
-                target = target_map[str(mode)]
-                entry = p4info_helper.buildTableEntry(
-                    table_name="MyIngress.fault_table",
-                    match_fields={"hdr.polyShim.modality_id": mode},
-                    action_name="MyIngress.fault_corrupt",
-                    action_params={"mask": mask},
-                )
-                target.WriteTableEntry(entry)
-                print("FAULT corrupt mode=%d mask=0x%x" % (mode, mask))
-            elif parts[0] == 'drop':
-                mode = int(parts[1])
-                target = target_map[str(mode)]
-                entry = p4info_helper.buildTableEntry(
-                    table_name="MyIngress.fault_table",
-                    match_fields={"hdr.polyShim.modality_id": mode},
-                    action_name="MyIngress.fault_drop",
-                    action_params={},
-                )
-                target.WriteTableEntry(entry)
-                print("FAULT drop mode=%d" % mode)
+        target_map = {'1': s11, '2': s21, '3': s31}
+        args = sys.argv
+        i = 0
+        while i < len(args):
+            if args[i] == '--fault' and i + 1 < len(args):
+                fault_arg = args[i + 1]
+                parts = fault_arg.split(':')
+                if parts[0] == 'corrupt':
+                    mode = int(parts[1])
+                    mask = int(parts[3], 16)
+                    target = target_map[str(mode)]
+                    entry = p4info_helper.buildTableEntry(
+                        table_name="MyIngress.fault_table",
+                        match_fields={"hdr.polyShim.modality_id": mode},
+                        action_name="MyIngress.fault_corrupt",
+                        action_params={"mask": mask},
+                    )
+                    target.WriteTableEntry(entry)
+                    print("FAULT corrupt mode=%d mask=0x%x" % (mode, mask))
+                elif parts[0] == 'drop':
+                    mode = int(parts[1])
+                    target = target_map[str(mode)]
+                    entry = p4info_helper.buildTableEntry(
+                        table_name="MyIngress.fault_table",
+                        match_fields={"hdr.polyShim.modality_id": mode},
+                        action_name="MyIngress.fault_drop",
+                        action_params={},
+                    )
+                    target.WriteTableEntry(entry)
+                    print("FAULT drop mode=%d" % mode)
+                i += 2
+            else:
+                i += 1
 
 
     except KeyboardInterrupt:
