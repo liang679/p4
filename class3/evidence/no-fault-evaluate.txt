@@ -1,0 +1,12 @@
+GATEWAY s1
+mode1 status=NO_DATA good=0 bad=0
+mode2 status=NO_DATA good=0 bad=0
+mode3 status=NO_DATA good=0 bad=0
+no_majority status=CLEAR count=0
+schedule_policy=ALL_THREE_MODES
+GATEWAY s2
+mode1 status=HEALTHY good=1 bad=0
+mode2 status=HEALTHY good=1 bad=0
+mode3 status=HEALTHY good=1 bad=0
+no_majority status=CLEAR count=0
+schedule_policy=ALL_THREE_MODES
