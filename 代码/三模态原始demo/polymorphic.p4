@@ -150,6 +150,7 @@ struct metadata {
     bit<32>     observed_crc;
     bit<1>      output_now;
     bit<1>      adj_done;
+    bit<1>      fault_hit;
 }
 
 struct headers {
@@ -297,9 +298,9 @@ control MyIngress(inout headers hdr,
     register<bit<1>>(1024)  decided_reg;
     register<bit<32>>(1024) decided_crc_reg;
 
-    counter(4, CounterType.packets) mode_good;
-    counter(4, CounterType.packets) mode_bad;
-    counter(1, CounterType.packets) no_majority_cnt;
+    counter(5, CounterType.packets) good_count;
+    counter(5, CounterType.packets) bad_count;
+    counter(1, CounterType.packets) no_majority_count;
 
     action drop() {
         mark_to_drop(standard_metadata);
@@ -444,9 +445,9 @@ control MyIngress(inout headers hdr,
 
             if (cur_decided == 1) {
                 if (cur_winner != 0 && meta.observed_crc == cur_winner) {
-                    mode_good.count((bit<32>)mode);
+                    good_count.count((bit<32>)mode);
                 } else {
-                    mode_bad.count((bit<32>)mode);
+                    bad_count.count((bit<32>)mode);
                 }
                 meta.output_now = 0;
             }
@@ -460,8 +461,8 @@ control MyIngress(inout headers hdr,
                 if (meta.observed_crc == cur_cand1) {
                     cur_decided = 1;
                     cur_winner  = cur_cand1;
-                    mode_good.count((bit<32>)cur_mode1);
-                    mode_good.count((bit<32>)mode);
+                    good_count.count((bit<32>)cur_mode1);
+                    good_count.count((bit<32>)mode);
                     meta.output_now = 1;
                 } else {
                     cur_cand2 = meta.observed_crc;
@@ -474,21 +475,21 @@ control MyIngress(inout headers hdr,
                 cur_decided = 1;
                 if (meta.observed_crc == cur_cand1) {
                     cur_winner = cur_cand1;
-                    mode_good.count((bit<32>)cur_mode1);
-                    mode_bad.count((bit<32>)cur_mode2);
-                    mode_good.count((bit<32>)mode);
+                    good_count.count((bit<32>)cur_mode1);
+                    bad_count.count((bit<32>)cur_mode2);
+                    good_count.count((bit<32>)mode);
                     meta.output_now = 1;
                 }
                 else if (meta.observed_crc == cur_cand2) {
                     cur_winner = cur_cand2;
-                    mode_bad.count((bit<32>)cur_mode1);
-                    mode_good.count((bit<32>)cur_mode2);
-                    mode_good.count((bit<32>)mode);
+                    bad_count.count((bit<32>)cur_mode1);
+                    good_count.count((bit<32>)cur_mode2);
+                    good_count.count((bit<32>)mode);
                     meta.output_now = 1;
                 }
                 else {
                     cur_winner = 0;
-                    no_majority_cnt.count((bit<32>)0);
+                    no_majority_count.count((bit<32>)0);
                     meta.output_now = 0;
                 }
             }
@@ -541,6 +542,28 @@ control MyIngress(inout headers hdr,
         }
 
         standard_metadata.egress_spec = 1;
+    }
+
+    action fault_corrupt(bit<128> mask) {
+        hdr.protected_data.value = hdr.protected_data.value ^ mask;
+    }
+
+    action fault_drop() {
+        mark_to_drop(standard_metadata);
+        meta.fault_hit = 1;
+    }
+
+    table fault_table {
+        key = {
+            hdr.polyShim.modality_id: exact;
+        }
+        actions = {
+            fault_corrupt;
+            fault_drop;
+            NoAction;
+        }
+        size = 8;
+        default_action = NoAction();
     }
 
     table gateway_role {
@@ -596,7 +619,15 @@ control MyIngress(inout headers hdr,
     }
 
     apply {
-        if (hdr.ethernet.etherType == TYPE_IPV4
+        if (hdr.polyShim.isValid()
+            && standard_metadata.ingress_port == 1) {
+            meta.fault_hit = 0;
+            fault_table.apply();
+        }
+
+        if (meta.fault_hit == 1) {
+        }
+        else if (hdr.ethernet.etherType == TYPE_IPV4
             && hdr.ipv4.isValid()
             && hdr.ipv4.protocol == 17
             && hdr.udp.isValid()
