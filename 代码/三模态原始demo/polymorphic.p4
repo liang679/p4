@@ -149,6 +149,7 @@ struct metadata {
     bit<32>     adj_slot;
     bit<32>     observed_crc;
     bit<1>      output_now;
+    bit<1>      adj_done;
 }
 
 struct headers {
@@ -387,6 +388,7 @@ control MyIngress(inout headers hdr,
     }
 
     action do_adjudicate() {
+        meta.adj_done = 1;
         meta.adj_slot = hdr.polyShim.sequence_number & 1023;
 
         bit<32> cur_seq_tag;
@@ -606,12 +608,19 @@ control MyIngress(inout headers hdr,
         if (hdr.polyShim.isValid()
             && standard_metadata.ingress_port >= 2
             && standard_metadata.ingress_port <= 4) {
+            meta.adj_done = 0;
             gateway_role.apply();
-            if (meta.output_now == 1) {
-                restore_and_forward();
-            } else {
-                mark_to_drop(standard_metadata);
+            if (meta.adj_done == 1) {
+                if (meta.output_now == 1) {
+                    restore_and_forward();
+                } else {
+                    mark_to_drop(standard_metadata);
+                }
             }
+        }
+
+        if (meta.adj_done == 1) {
+            // 已由目的网关处理完毕
         }
         else if (standard_metadata.mcast_grp == POLY_MCAST_GROUP) {
             // 已触发 multicast，交给 PRE 复制
