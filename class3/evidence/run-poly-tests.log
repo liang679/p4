@@ -1,0 +1,46 @@
+
+=== scenario: no-fault ===
+POLY_LISTEN iface=eth0 timeout=10.0 expect=1
+POLY_RECV index=1 src=10.0.1.1 dst=10.0.2.2 ttl=64 protected_hex=6175746f2d6f6b000000000000000000 text='auto-ok'
+POLY_SUMMARY received=1 expected=1
+s1 mode1_good=0 mode1_bad=0 mode2_good=0 mode2_bad=0 mode3_good=0 mode3_bad=0 no_majority=0
+s2 mode1_good=1 mode1_bad=0 mode2_good=1 mode2_bad=0 mode3_good=1 mode3_bad=0 no_majority=0
+SCENARIO_PASS no-fault
+
+=== scenario: reverse ===
+POLY_LISTEN iface=eth0 timeout=10.0 expect=1
+POLY_RECV index=1 src=10.0.2.2 dst=10.0.1.1 ttl=64 protected_hex=6175746f2d7265766572736500000000 text='auto-reverse'
+POLY_SUMMARY received=1 expected=1
+s1 mode1_good=1 mode1_bad=0 mode2_good=1 mode2_bad=0 mode3_good=1 mode3_bad=0 no_majority=0
+s2 mode1_good=0 mode1_bad=0 mode2_good=0 mode2_bad=0 mode3_good=0 mode3_bad=0 no_majority=0
+SCENARIO_PASS reverse
+
+=== scenario: corrupt-mode1 ===
+FAULT corrupt mode=1 mask=0x1
+POLY_LISTEN iface=eth0 timeout=10.0 expect=1
+POLY_RECV index=1 src=10.0.1.1 dst=10.0.2.2 ttl=64 protected_hex=6175746f2d636f727275707400000000 text='auto-corrupt'
+POLY_SUMMARY received=1 expected=1
+s1 mode1_good=0 mode1_bad=0 mode2_good=0 mode2_bad=0 mode3_good=0 mode3_bad=0 no_majority=0
+s2 mode1_good=0 mode1_bad=1 mode2_good=1 mode2_bad=0 mode3_good=1 mode3_bad=0 no_majority=0
+SCENARIO_PASS corrupt-mode1
+
+=== scenario: drop-mode2 ===
+FAULT drop mode=2
+POLY_LISTEN iface=eth0 timeout=10.0 expect=1
+POLY_RECV index=1 src=10.0.1.1 dst=10.0.2.2 ttl=64 protected_hex=6175746f2d64726f7000000000000000 text='auto-drop'
+POLY_SUMMARY received=1 expected=1
+s1 mode1_good=0 mode1_bad=0 mode2_good=0 mode2_bad=0 mode3_good=0 mode3_bad=0 no_majority=0
+s2 mode1_good=1 mode1_bad=0 mode2_good=0 mode2_bad=0 mode3_good=1 mode3_bad=0 no_majority=0
+SCENARIO_PASS drop-mode2
+
+=== scenario: no-majority ===
+FAULT corrupt mode=1 mask=0x1
+FAULT corrupt mode=2 mask=0x2
+FAULT corrupt mode=3 mask=0x4
+POLY_LISTEN iface=eth0 timeout=4.0 expect=0
+POLY_SUMMARY received=0 expected=0
+s1 mode1_good=0 mode1_bad=0 mode2_good=0 mode2_bad=0 mode3_good=0 mode3_bad=0 no_majority=0
+s2 mode1_good=0 mode1_bad=0 mode2_good=0 mode2_bad=0 mode3_good=0 mode3_bad=0 no_majority=1
+SCENARIO_PASS no-majority
+
+ALL_SCENARIOS_PASS 5
